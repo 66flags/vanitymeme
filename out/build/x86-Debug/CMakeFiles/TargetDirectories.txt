@@ -1,0 +1,8 @@
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/CMakeFiles/edit_cache.dir
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/CMakeFiles/rebuild_cache.dir
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/dll/CMakeFiles/vanitycheats.dir
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/dll/CMakeFiles/edit_cache.dir
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/dll/CMakeFiles/rebuild_cache.dir
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/steam_module/CMakeFiles/steam_module.dir
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/steam_module/CMakeFiles/edit_cache.dir
+C:/Users/erikm/Desktop/d/accessible/arvs/vanitymeme-main/out/build/x86-Debug/steam_module/CMakeFiles/rebuild_cache.dir
