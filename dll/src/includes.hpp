@@ -18,4 +18,22 @@
 #include "binary.hpp"
 #include "import_list.hpp"
 
+struct config_data_t {
+    char type;
+    char gap1[ 36 ];
+    char owner_name;
+    char gap26[ 32 ];
+    char config_name;
+    char gap47[ 27 ];
+    bool is_public;
+    char gap63[ 2 ];
+    char byte65;
+    DWORD user_id;
+    DWORD dword6C;
+    const char *pchar70;
+    int category;
+    char gap78[ 16 ];
+};
+static_assert( sizeof( config_data_t ) == 0x88 );
+
 #endif//LMAOBOX_LDR_INCLUDES_HPP

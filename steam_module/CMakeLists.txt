@@ -19,6 +19,7 @@ file(GLOB_RECURSE SRC
 
 add_library(${PROJECT_NAME} MODULE ${SRC})
 find_library(SPDLOG_LIBRARY spdlog.lib PATHS "${CMAKE_CURRENT_SOURCE_DIR}/deps/spdlog")
+
 target_link_libraries(${PROJECT_NAME} PRIVATE ${SPDLOG_LIBRARY})
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/deps")

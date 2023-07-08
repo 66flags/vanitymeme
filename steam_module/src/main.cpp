@@ -9,6 +9,8 @@ int __stdcall create_process_hk( LPCWSTR lpApplicationName, LPWSTR lpCommandLine
 
     auto original = g_create_process_hk.stdcall< int >( lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation );
 
+    std::wstring app_name{ lpApplicationName };
+    spdlog::info( "Process created: {}", std::string( app_name.begin( ), app_name.end( ) ) );
     if ( !wcsstr( lpApplicationName, L"Counter-Strike Global Offensive\\csgo.exe" ) )
         return original;
 
@@ -35,7 +37,7 @@ int __stdcall create_process_hk( LPCWSTR lpApplicationName, LPWSTR lpCommandLine
     return original;
 }
 
-void __stdcall hooks_main( )
+void __stdcall hooks_main( HMODULE mod )
 {
     FILE *stream = nullptr;
 
@@ -46,12 +48,18 @@ void __stdcall hooks_main( )
     auto address = reinterpret_cast< void * >( GetProcAddress( GetModuleHandleA( "kernel32.dll" ), "CreateProcessW" ) );
 
     g_create_process_hk = safetyhook::create_inline( address, reinterpret_cast< void * >( create_process_hk ) );
+
+    while ( !GetAsyncKeyState( VK_END ) )
+        std::this_thread::sleep_for( std::chrono::milliseconds( 250 ) );
+
+    FreeConsole( );
+    FreeLibraryAndExitThread( mod, 0 );
 }
 
 int __stdcall DllMain( HINSTANCE mod, unsigned long reason, void *reserved )
 {
     if ( reason == DLL_PROCESS_ATTACH ) {
-        auto thread = CreateThread( nullptr, 0, LPTHREAD_START_ROUTINE( hooks_main ), reserved, 0, nullptr );
+        auto thread = CreateThread( nullptr, 0, LPTHREAD_START_ROUTINE( hooks_main ), mod, 0, nullptr );
 
         if ( thread )
             CloseHandle( thread );

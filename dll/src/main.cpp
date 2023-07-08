@@ -1,10 +1,31 @@
 #include "includes.hpp"
 
-std::mutex g_mutex;
-
 SafetyHookInline g_connect_hk{ };
 SafetyHookInline g_config_handler_hk{ };
 SafetyHookInline g_curl_easy_setopt_hk{ };
+SafetyHookInline g_read_packet_hk{ };
+SafetyHookInline g_send_packet_hk{ };
+SafetyHookInline g_checkbox_hk{ };
+
+char lol[ 20 ];
+bool __cdecl checkbox_hk( const char *label, bool *v )
+{
+    // wanted ret 0x19CFBB70
+    // checkbox add 0x19D25690
+    // inputtext 0x19CA6DC0
+
+    bool result = g_checkbox_hk.call< bool >( label, v );
+
+    // in misc
+    if ( reinterpret_cast< uintptr_t >( _ReturnAddress( ) ) == 0x19CFBB70 ) {
+        static auto input_text = reinterpret_cast< int( __cdecl * )( void *icon, const char *label, char *buf, int buf_size, int flags, int callback, void *userdata ) >( 0x19CA6DC0 );
+
+        if (input_text(reinterpret_cast<void*>(0x19FE0288), "Menu username", lol, sizeof(lol), 0, 0, 0))
+            memmove( reinterpret_cast< void * >( 0x1A27AA44 ), lol, sizeof( lol ) );
+    }
+
+    return result;
+}
 
 int __cdecl connect_hk( const char *a1, unsigned __int16 a2 )
 {
@@ -33,9 +54,6 @@ int __cdecl connect_hk( const char *a1, unsigned __int16 a2 )
         WSACleanup( );
     }
 }
-
-SafetyHookInline g_read_packet_hk{ };
-SafetyHookInline g_send_packet_hk{ };
 
 int __cdecl read_packet( SOCKET s, int a2, int a3 )
 {
@@ -78,50 +96,6 @@ int __cdecl curl_easy_setopt( int a1, void *Src, const char *a3 )
     spdlog::info( "Config handler called. {}", original );
 
     return original;
-}
-
-void update_config_list( )
-{
-    char a1[] = "its shoutout time";
-    char a2[] = "to big black";
-    char a3[] = "nigga balls";
-
-    reinterpret_cast< int( __thiscall * )( void *, char * ) >( 0x19BA5480 )( reinterpret_cast< void * >( 0x1A09A770 ), a1 );
-    reinterpret_cast< int( __thiscall * )( void *, char * ) >( 0x19BA5480 )( reinterpret_cast< void * >( 0x1A09A770 ), a2 );
-    reinterpret_cast< int( __thiscall * )( void *, char * ) >( 0x19BA5480 )( reinterpret_cast< void * >( 0x1A09A770 ), a3 );
-
-    //bool new_configs = reinterpret_cast< bool( __cdecl * )( ) >( 0x19CF27C0 )( );
-
-    //if ( new_configs ) {
-    //    new_configs = *reinterpret_cast< bool * >( reinterpret_cast< void * >( 0x1A235F9F ) );
-    //}
-
-    //   if ( !*reinterpret_cast< bool * >( reinterpret_cast< void * >( 0x1A235F9F ) ) ) {
-    //        for ( int j = 0;; ++j ) {
-    //            result = sub_19BA5E00( &unk_1A09A8D0 );
-    //            if ( j >= result )
-    //                break;
-    //            if ( reinterpret_cast< char* >( reinterpret_cast< void * >( 0x1A235F9C ) )[ j ] ) {
-    //                sub_19B98970( ( char * ) v85 );
-    //                v85[ 0 ] = 10;
-    //                v28 = ( const void * ) sub_19BA2DF0( j );
-    //                memmove( v86, v28, 0x25u );
-
-    //                reinterpret_cast< int( __thiscall * )( void *, char * ) >( 0x19BA5480 )( reinterpret_cast< void * >( 0x1A09A770 ), v85 ); // push_back
-    //                sub_19B9C7F0( v85 );
-    //                sub_19B9AA40( v85 );
-    //            }
-    //        }
-    //        *reinterpret_cast< bool * >( reinterpret_cast< void * >( 0x1A235F9F ) ) = true;
-    //}
-
-    auto v1 = reinterpret_cast< int( __thiscall * )( void * ) >( 0x19BA5EA0 )( reinterpret_cast< void * >( 0x1A09A770 ) );
-
-    for ( int i = 0; i < v1; ++i ) {
-        const char* v82 = reinterpret_cast< const char*( __thiscall * )( void *, unsigned int ) >( 0x19BA2E50 )( reinterpret_cast< void * >( 0x1A09A770 ), i );
-
-        spdlog::info( "{}", v82 );
-    }
 }
 
 void __stdcall hooks_main( )
@@ -187,26 +161,31 @@ void __stdcall hooks_main( )
 
     g_curl_easy_setopt_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19DA8F40 ), reinterpret_cast< void * >( curl_easy_setopt ) );
     g_config_handler_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19C44170 ), reinterpret_cast< void * >( config_handler ) );
+    g_checkbox_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19D25690 ), reinterpret_cast< void * >( checkbox_hk ) );
 
     reinterpret_cast< void( __cdecl * )( ) >( 0x19E358D5 )( );// security init cookie
     reinterpret_cast< int( __cdecl * )( HINSTANCE, DWORD, LPVOID ) >( 0x19E34E64 )( reinterpret_cast< HINSTANCE >( 0x19B30000 ), DLL_PROCESS_ATTACH, 0 );
 
-    reinterpret_cast< void *( __thiscall * ) ( void * ) >( 0x19B93E40 )( reinterpret_cast< void * >( 0x1A09A770 ) );
-    update_config_list( );
+    std::vector< config_data_t > parsed_cfg;
+
+    config_data_t new_cfg{ };
+    new_cfg.category = 0;
+    new_cfg.is_public = true;
+    new_cfg.user_id = 420;
+   
+    new_cfg.config_name = 'a';
+    new_cfg.owner_name = 'b';
+    
+    parsed_cfg.push_back( new_cfg );
+
+    // -- crashes
+    //reinterpret_cast< void *( __thiscall * ) ( uintptr_t, std::vector< config_data_t > ) >( 0x19B9AFF0 )( 0x1A09A854, parsed_cfg );
+    // -- breaks everything
+    //reinterpret_cast< void *( __thiscall * ) ( uintptr_t, void * ) >( 0x19B9AFF0 )( 0x1A09A854, &parsed_cfg );
+    // -- doesn't show
+    //reinterpret_cast< void *( __thiscall * ) ( uintptr_t, void * ) >( 0x19B9AFF0 )( 0x1A09A854, &new_cfg );
 
     spdlog::info( "Done." );
-
-    //void *__thiscall sub_19B93E40(void *this)
-
-    //while ( !vector_address )
-    //    std::this_thread::sleep_for( std::chrono::milliseconds( 400 ) );
-
-    //sub_19B98970( ( char * ) v307 );
-    //v307[ 0 ] = 8;
-    //memmove( v308, &byte_1A28E1A4, 0x11u );
-    //v308[ 61 ] = 0;
-    //v309 = dword_1A28E130;
-    //vector_push_back( g_cfg_vector, ( int ) v307 );
 }
 
 int __stdcall DllMain( HINSTANCE mod, unsigned long reason, void *reserved )
