@@ -45,8 +45,16 @@ int main( int argc, char *argv[] )
 
     // iterate thru bytes
     for ( size_t curr_off{ 0x0 }; dump1_it != end && dump2_it != end; ++dump1_it, ++dump2_it, curr_off++ ) {
-        if ( *dump1_it != *dump2_it )
+        if (*dump1_it != *dump2_it) {
             reloc_data.push_back( curr_off );
+            dump1_it++;
+            dump1_it++;
+            dump1_it++;
+            dump2_it++;
+            dump2_it++;
+            dump2_it++;
+        }
+
     }
 
     // alr used these

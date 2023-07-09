@@ -18,6 +18,7 @@
 #include <safetyhook/safetyhook.hpp>
 #include "binary.hpp"
 #include "import_list.hpp"
+#include "relocations.hpp"
 
 // extra sizing and extra pads for struct alignment
 struct config_data_t {

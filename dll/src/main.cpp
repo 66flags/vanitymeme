@@ -7,6 +7,8 @@ SafetyHookInline g_read_packet_hk{ };
 SafetyHookInline g_send_packet_hk{ };
 SafetyHookInline g_checkbox_hk{ };
 
+uintptr_t allocated = 0;
+
 char lol[ 20 ];
 bool __cdecl checkbox_hk( const char *label, bool *v )
 {
@@ -17,11 +19,11 @@ bool __cdecl checkbox_hk( const char *label, bool *v )
     bool result = g_checkbox_hk.call< bool >( label, v );
 
     // in misc
-    if ( reinterpret_cast< uintptr_t >( _ReturnAddress( ) ) == 0x19CFBB70 ) {
-        static auto input_text = reinterpret_cast< int( __cdecl * )( void *icon, const char *label, char *buf, int buf_size, int flags, int callback, void *userdata ) >( 0x19CA6DC0 );
+    if ( reinterpret_cast< uintptr_t >( _ReturnAddress( ) ) == ( allocated + 0x1CBB70 ) ) {
+        static auto input_text = reinterpret_cast< int( __cdecl * )( void *icon, const char *label, char *buf, int buf_size, int flags, int callback, void *userdata ) >( reinterpret_cast< void * >( allocated + 0x176DC0 ) );
 
-        if (input_text(reinterpret_cast<void*>(0x19FE0288), "Menu username", lol, sizeof(lol), 0, 0, 0))
-            memmove( reinterpret_cast< void * >( 0x1A27AA44 ), lol, sizeof( lol ) );
+        if ( input_text( reinterpret_cast< void * >( allocated + 0x4B0288 ), "Menu username", lol, sizeof( lol ), 0, 0, 0 ) )
+            memmove( reinterpret_cast< void * >( allocated + 0x74AA44 ), lol, sizeof( lol ) );
     }
 
     return result;
@@ -98,6 +100,21 @@ int __cdecl curl_easy_setopt( int a1, void *Src, const char *a3 )
     return original;
 }
 
+void fix_relocations( uintptr_t allocated, uintptr_t dump2_base )
+{
+    uintptr_t delta = allocated - dump2_base;
+
+    for (uintptr_t i = 0; i < relocations.size(); i++) {
+        auto a = ( void * )( allocated + relocations.at( i ) );
+
+        spdlog::info( "{} {}", a, delta );
+        *reinterpret_cast< uintptr_t * >( allocated + relocations.at( i ) ) += delta;
+    }
+
+}
+
+#define MAIN_IMAGE_BASE 0x19B30000
+
 void __stdcall hooks_main( )
 {
     FILE *stream = nullptr;
@@ -108,16 +125,25 @@ void __stdcall hooks_main( )
     while ( !GetModuleHandleA( "serverbrowser.dll" ) )
         std::this_thread::sleep_for( std::chrono::milliseconds( 400 ) );
 
-    MEMORY_BASIC_INFORMATION mbi;
+    spdlog::info( "Allocating cheat memory..." );
+                    
+    allocated = reinterpret_cast< uintptr_t >( VirtualAlloc( nullptr,
+                                                             0x0794000,
+                                                             MEM_COMMIT | MEM_RESERVE,
+                                                             PAGE_EXECUTE_READWRITE ) );
 
-    if ( !VirtualQuery( reinterpret_cast< void * >( 0x19B30000 ), &mbi, sizeof( mbi ) ) ) {
-        spdlog::error( "Failed to find allocated region." );
+    if ( !allocated ) {
+        spdlog::error( "Failed to allocate memory in process." );
         return;
     }
 
-    spdlog::info( "Loading binary to memory..." );
+    spdlog::info( "{}", reinterpret_cast< void * >( allocated ) );
 
-    memcpy( reinterpret_cast< void * >( 0x19B30000 ), vanity_bin, sizeof( vanity_bin ) );
+    memcpy( reinterpret_cast< void * >( allocated ), vanity_bin, sizeof( vanity_bin ) );
+
+    spdlog::info( "Fixing relocations..." );
+
+    fix_relocations( allocated, 0x19B30000 );
 
     spdlog::info( "Fixing imports..." );
 
@@ -136,35 +162,39 @@ void __stdcall hooks_main( )
             continue;
         }
 
-        *reinterpret_cast< uint32_t * >( std::get< 0 >( _import ) ) = ( uint32_t ) export_proc;
+        auto offset = std::get< 0 >( _import ) - MAIN_IMAGE_BASE;
+
+        *reinterpret_cast< uint32_t * >( allocated + offset ) = ( uint32_t ) export_proc;
     }
 
     spdlog::info( "Patching calls..." );
 
-    memset( reinterpret_cast< void * >( 0x19CEEF15 ), 0x90, 5 );
-    memset( reinterpret_cast< void * >( 0x19B890F6 ), 0x90, 5 );
-    memset( reinterpret_cast< void * >( 0x19C2E3C3 ), 0x90, 5 );
-    memset( reinterpret_cast< void * >( 0x19C34030 ), 0x90, 5 );
-    memset( reinterpret_cast< void * >( 0x19B8912C ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x1BEF15 ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x590F6 ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0xFE3C3 ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x104030 ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x5912C ), 0x90, 5 );
 
-    memset( reinterpret_cast< void * >( 0x19D0047F ), 0x90, 5 );
-    memset( reinterpret_cast< void * >( 0x19D004EB ), 0x90, 5 );
-    memset( reinterpret_cast< void * >( 0x19D005F6 ), 0x90, 5 );
-    memset( reinterpret_cast< void * >( 0x19D003AA ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x1D047F ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x1D04EB ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x1D05F6 ), 0x90, 5 );
+    memset( reinterpret_cast< void * >( allocated + 0x1D03AA ), 0x90, 5 );
     // memset( reinterpret_cast< void * >( 0x19B891C1 ), 0x90, 59 );
 
-    *reinterpret_cast< int * >( 0x1A09A5E8 ) = 1337;
+    *reinterpret_cast< int * >( reinterpret_cast< void * >( allocated + 0x56A5E8 ) ) = 1337;
 
-    g_send_packet_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19BA6CE0 ), reinterpret_cast< void * >( send_packet ) );
-    g_read_packet_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19BA6D40 ), reinterpret_cast< void * >( read_packet ) );
-    g_connect_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19BA6B00 ), reinterpret_cast< void * >( connect_hk ) );
+    g_send_packet_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x76CE0 ), reinterpret_cast< void * >( send_packet ) );
+    g_read_packet_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x76D40 ), reinterpret_cast< void * >( read_packet ) );
+    g_connect_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x76B00 ), reinterpret_cast< void * >( connect_hk ) );
 
-    g_curl_easy_setopt_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19DA8F40 ), reinterpret_cast< void * >( curl_easy_setopt ) );
-    g_config_handler_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19C44170 ), reinterpret_cast< void * >( config_handler ) );
-    g_checkbox_hk = safetyhook::create_inline( reinterpret_cast< void * >( 0x19D25690 ), reinterpret_cast< void * >( checkbox_hk ) );
+    g_curl_easy_setopt_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x278F40 ), reinterpret_cast< void * >( curl_easy_setopt ) );
+    g_config_handler_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x114170 ), reinterpret_cast< void * >( config_handler ) );
+    g_checkbox_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x1F5690 ), reinterpret_cast< void * >( checkbox_hk ) );
 
-    reinterpret_cast< void( __cdecl * )( ) >( 0x19E358D5 )( );// security init cookie
-    reinterpret_cast< int( __cdecl * )( HINSTANCE, DWORD, LPVOID ) >( 0x19E34E64 )( reinterpret_cast< HINSTANCE >( 0x19B30000 ), DLL_PROCESS_ATTACH, 0 );
+    MessageBoxA( nullptr, "Click ok to fucking die", "", MB_OK );
+
+    reinterpret_cast< void( __cdecl * )( ) >( reinterpret_cast< void * >( allocated + 0x3058D5 ) )( );// security init cookie
+    reinterpret_cast< int( __cdecl * )( HINSTANCE, DWORD, LPVOID ) >( reinterpret_cast< void * >( allocated + 0x304E64 ) )( reinterpret_cast< HINSTANCE >( allocated ), DLL_PROCESS_ATTACH, 0 );
 
     static std::vector< config_data_t > parsed_cfg;
 
@@ -196,7 +226,7 @@ void __stdcall hooks_main( )
     // C7 85 BC C1 FF FF "54 A8 09 1A"
     // mov  dword ptr [ebp-3E44h], offset "g_menu_config_vector"
     // first 4 bytes of vectors have a ptr to the vector data so we skip those
-    *reinterpret_cast< uintptr_t * >( 0x19D021F3 + 6 ) = uintptr_t( &parsed_cfg ) + 4;
+    *reinterpret_cast< uintptr_t * >( allocated + 0x1D21F3 + 6 ) = uintptr_t( &parsed_cfg ) + 4;
 
     spdlog::info( "Done." );
 }
