@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 
 #include <spdlog/spdlog.h>
 #include <safetyhook/safetyhook.hpp>
