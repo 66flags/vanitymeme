@@ -166,24 +166,37 @@ void __stdcall hooks_main( )
     reinterpret_cast< void( __cdecl * )( ) >( 0x19E358D5 )( );// security init cookie
     reinterpret_cast< int( __cdecl * )( HINSTANCE, DWORD, LPVOID ) >( 0x19E34E64 )( reinterpret_cast< HINSTANCE >( 0x19B30000 ), DLL_PROCESS_ATTACH, 0 );
 
-    std::vector< config_data_t > parsed_cfg;
+    static std::vector< config_data_t > parsed_cfg;
 
     config_data_t new_cfg{ };
-    new_cfg.category = 0;
-    new_cfg.is_public = true;
-    new_cfg.user_id = 420;
-   
-    new_cfg.config_name = 'a';
-    new_cfg.owner_name = 'b';
-    
+    strcpy( new_cfg.loaded_config, "seven" );
+    strcpy( new_cfg.config_name, "nine" );
+    strcpy( new_cfg.owner_name, "eight" );
+    new_cfg.is_public = false;
+    new_cfg.is_user_config = true;
+    new_cfg.should_delete = false;
+    new_cfg.is_liked = true;
+    new_cfg.user_id = 1337;
+    new_cfg.rating = 100;
+    new_cfg.downloads = 5000;
+    new_cfg.category = 2;
+
     parsed_cfg.push_back( new_cfg );
 
-    // -- crashes
-    //reinterpret_cast< void *( __thiscall * ) ( uintptr_t, std::vector< config_data_t > ) >( 0x19B9AFF0 )( 0x1A09A854, parsed_cfg );
-    // -- breaks everything
-    //reinterpret_cast< void *( __thiscall * ) ( uintptr_t, void * ) >( 0x19B9AFF0 )( 0x1A09A854, &parsed_cfg );
-    // -- doesn't show
-    //reinterpret_cast< void *( __thiscall * ) ( uintptr_t, void * ) >( 0x19B9AFF0 )( 0x1A09A854, &new_cfg );
+    strcpy( new_cfg.config_name, "seven" );
+    new_cfg.category = 0;
+
+    parsed_cfg.push_back( new_cfg );
+    
+    strcpy( new_cfg.config_name, "four" );
+    new_cfg.category = 1;
+
+    parsed_cfg.push_back( new_cfg );
+
+    // C7 85 BC C1 FF FF "54 A8 09 1A"
+    // mov  dword ptr [ebp-3E44h], offset "g_menu_config_vector"
+    // first 4 bytes of vectors have a ptr to the vector data so we skip those
+    *reinterpret_cast< uintptr_t * >( 0x19D021F3 + 6 ) = uintptr_t( &parsed_cfg ) + 4;
 
     spdlog::info( "Done." );
 }
