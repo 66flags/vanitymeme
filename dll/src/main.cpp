@@ -1,5 +1,7 @@
 #include "includes.hpp"
 
+#define MAIN_IMAGE_BASE 0x19B30000
+
 SafetyHookInline g_connect_hk{ };
 SafetyHookInline g_config_handler_hk{ };
 SafetyHookInline g_curl_easy_setopt_hk{ };
@@ -100,21 +102,6 @@ int __cdecl curl_easy_setopt( int a1, void *Src, const char *a3 )
     return original;
 }
 
-void fix_relocations( uintptr_t allocated, uintptr_t dump2_base )
-{
-    uintptr_t delta = allocated - dump2_base;
-
-    for (uintptr_t i = 0; i < relocations.size(); i++) {
-        auto a = ( void * )( allocated + relocations.at( i ) );
-
-        spdlog::info( "{} {}", a, delta );
-        *reinterpret_cast< uintptr_t * >( allocated + relocations.at( i ) ) += delta;
-    }
-
-}
-
-#define MAIN_IMAGE_BASE 0x19B30000
-
 void __stdcall hooks_main( )
 {
     FILE *stream = nullptr;
@@ -137,13 +124,12 @@ void __stdcall hooks_main( )
         return;
     }
 
-    spdlog::info( "{}", reinterpret_cast< void * >( allocated ) );
-
     memcpy( reinterpret_cast< void * >( allocated ), vanity_bin, sizeof( vanity_bin ) );
 
     spdlog::info( "Fixing relocations..." );
 
-    fix_relocations( allocated, 0x19B30000 );
+    for ( size_t i = 0; i < reloc_data.size( ); i++ )
+        *reinterpret_cast< size_t * >( allocated + std::get< 0 >( reloc_data[ i ] ) ) = allocated + std::get< 1 >( reloc_data[ i ] );
 
     spdlog::info( "Fixing imports..." );
 
@@ -190,8 +176,6 @@ void __stdcall hooks_main( )
     g_curl_easy_setopt_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x278F40 ), reinterpret_cast< void * >( curl_easy_setopt ) );
     g_config_handler_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x114170 ), reinterpret_cast< void * >( config_handler ) );
     g_checkbox_hk = safetyhook::create_inline( reinterpret_cast< void * >( allocated + 0x1F5690 ), reinterpret_cast< void * >( checkbox_hk ) );
-
-    MessageBoxA( nullptr, "Click ok to fucking die", "", MB_OK );
 
     reinterpret_cast< void( __cdecl * )( ) >( reinterpret_cast< void * >( allocated + 0x3058D5 ) )( );// security init cookie
     reinterpret_cast< int( __cdecl * )( HINSTANCE, DWORD, LPVOID ) >( reinterpret_cast< void * >( allocated + 0x304E64 ) )( reinterpret_cast< HINSTANCE >( allocated ), DLL_PROCESS_ATTACH, 0 );

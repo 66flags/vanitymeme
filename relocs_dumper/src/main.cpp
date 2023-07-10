@@ -1,92 +1,131 @@
 #include "includes.hpp"
 
+byte *load_file_to_memory( const char *file_path, size_t &file_size )
+{
+    byte * out;
+    std::fstream file( file_path, std::ios::binary | std::ios::in );
+
+    if ( file.fail( ) ) {
+        spdlog::error( "failed to open dump" );
+        return 0;
+    }
+
+    file.seekg( 0, std::ios::end );
+    size_t size = file.tellg( );
+
+    file.seekg( 0, std::ios::beg );
+
+    out = ( byte * ) malloc( size );
+    file.read( ( char * ) out, size );
+
+    file.close( );
+
+    file_size = size;
+
+    return out;
+}
+
 int main( int argc, char *argv[] )
 {
     // init variables
     const char *dump_path1 = argv[ 1 ];
-    const char *dump_path2 = argv[ 2 ];
+    const char *dump_base1 = argv[ 2 ];
+    const char *dump_path2 = argv[ 3 ];
+    const char *dump_base2 = argv[ 4 ];
 
-    std::fstream dump1{ }, dump2{ }, out_file{ };
+    std::fstream out_file{ };
 
-    if ( !dump_path1 || !dump_path2 ) {
-        spdlog::error( "usage: relocs_dumper <dump_path1> <dump_path2>" );
+    if ( !dump_path1 || !dump_base1 || !dump_path2 || !dump_base2 ) {
+        spdlog::error( "usage: relocs_dumper <dump_path1> <dump_base1> <dump_path2> <dump_base2>" );
         return 0;
     }
 
-    dump1.open( dump_path1, std::ios::binary | std::ios::in );
-    dump2.open( dump_path2, std::ios::binary | std::ios::in );
+    size_t dump1_size{ };
+    size_t dump2_size{ };
+    auto dump1 = load_file_to_memory( dump_path1, dump1_size );
+    auto dump2 = load_file_to_memory( dump_path2, dump2_size );
+
+    if ( !dump1 || !dump2 )
+        return 0;
+
     out_file.open( "relocs.hpp", std::ios::out | std::ios::trunc );
 
-    if ( dump1.fail( ) ) {
-        spdlog::error( "failed to open dump 1" );
-        return 0;
-    } else if ( dump2.fail( ) ) {
-        spdlog::error( "failed to open dump 2" );
-        return 0;
-    } else if ( out_file.fail( ) ) {
+    if ( out_file.fail( ) ) {
         spdlog::error( "failed to open output file" );
         return 0;
     }
 
-    // check if both files have the same size
-    std::filesystem::path pdump1( dump_path1 ), pdump2( dump_path2 );
-    if ( std::filesystem::file_size( pdump1 ) != std::filesystem::file_size( pdump2 ) ) {
+    if ( dump1_size != dump2_size ) {
         spdlog::error( "files are not the same size" );
         return 0;
     }
 
-    std::istreambuf_iterator< char > dump1_it( dump1 ), dump2_it( dump2 ), end;
-    std::vector< size_t > reloc_data;
+    std::vector< std::tuple< size_t, size_t > > reloc_data;
     std::stringstream out_str;
 
-    reloc_data.reserve( size_t(25) << 20 ); // reserve 25MB so we don't do extra allocs lel
+    size_t dump1_base{ };
+    size_t dump2_base{ };
+
+    std::stringstream base1( dump_base1 ), base2( dump_base2 );
+    base1 >> std::hex >> dump1_base;
+    base2 >> std::hex >> dump2_base;
+
+    reloc_data.reserve( dump1_size );
 
     spdlog::info( "finding relocs..." );
 
+    auto is_inside_module = [ & ]( size_t addr, size_t base ) -> bool {
+        return addr >= base && addr <= base + dump1_size;
+    };
+
     // iterate thru bytes
-    for ( size_t curr_off{ 0x0 }; dump1_it != end && dump2_it != end; ++dump1_it, ++dump2_it, curr_off++ ) {
-        if (*dump1_it != *dump2_it) {
-            reloc_data.push_back( curr_off );
-            dump1_it++;
-            dump1_it++;
-            dump1_it++;
-            dump2_it++;
-            dump2_it++;
-            dump2_it++;
+    size_t curr_offset{ };
+    size_t end{ dump1_size - sizeof( size_t ) };
+    while ( curr_offset < end ) {// skip the first byte, we literally don't care about it
+        // out data
+        size_t dump1_val = *reinterpret_cast< size_t * >( dump1 + curr_offset );
+        size_t dump2_val = *reinterpret_cast< size_t * >( dump2 + curr_offset );
+        size_t dump1_rva = dump1_val - dump1_base;
+        size_t dump2_rva = dump2_val - dump2_base;
+
+        if ( !is_inside_module( dump1_val, dump1_base ) || dump1_val == dump2_val || !is_inside_module( dump2_val, dump2_base ) || dump1_rva != dump2_rva ) {
+            // skip this byte
+            curr_offset++;
+            continue;
         }
 
+        // push reloc data
+        reloc_data.push_back( std::make_tuple( curr_offset, dump1_rva ) );
+
+        // skip current rva
+        curr_offset += sizeof( size_t );
     }
 
-    // alr used these
-    dump1.close( );
-    dump2.close( );
-
     // setup format
-    out_str << "#pragma once\n"
+    out_str << "#ifndef LDR_RELOCATIONS_HPP\n"
+            << "#define LDR_RELOCATIONS_HPP\n"
             << "\n"
-            << "std::array< size_t, " << reloc_data.size( ) << " > relocations = {";
+            << "std::vector< std::tuple< size_t, size_t > > reloc_data = {";
 
     // add relocs from list
     for ( size_t i = 0; i < reloc_data.size( ); i++ ) {
         bool is_end = i == reloc_data.size( ) - 1;
-        out_str << " 0x" << std::hex << std::uppercase << reloc_data.at( i ) << ( is_end ? " " : "," );
+        size_t reloc_offset = std::get< 0 >( reloc_data[ i ] );
+        size_t reloc_rva = std::get< 1 >( reloc_data[ i ] );
+
+        out_str << " { 0x" << std::hex << std::uppercase << reloc_offset << ", 0x" << reloc_rva << " }" << ( is_end ? " " : "," );
     }
 
     // end format
-    out_str << "};";
-
-    // why not LOL
-    out_str << R"(
-static void fix_relocations(size_t dump1_base, size_t dump2_base) {
-    size_t delta = dump1_base - dump2_base;
-
-    for ( size_t i = 0; i < relocations.size( ); i++ )
-        *reinterpret_cast<size_t*>( delta + relocations.at( i ) ) += delta;
-})";
+    out_str << "};\n"
+            << "\n"
+            << "#endif // LDR_RELOCATIONS_HPP";
 
     out_file << out_str.str( ); // write to file
 
     out_file.close( );
+    free( dump1 );
+    free( dump2 );
 
     spdlog::info( "done, found {} relocs", reloc_data.size( ) );
 
