@@ -8,7 +8,6 @@ int main( int argc, char *argv[] )
     const char *dump_path2 = argv[ 3 ];
     const char *dump_base2 = argv[ 4 ];
 
-
     if ( !dump_path1 || !dump_base1 || !dump_path2 || !dump_base2 ) {
         spdlog::error( "usage: relocs_dumper <dump_path1> <dump_base1> <dump_path2> <dump_base2>" );
         return 0;
