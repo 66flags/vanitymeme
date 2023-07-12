@@ -128,8 +128,8 @@ void __stdcall hooks_main( )
 
     spdlog::info( "Fixing relocations..." );
 
-    for ( size_t i = 0; i < reloc_data.size( ); i++ )
-        *reinterpret_cast< size_t * >( allocated + std::get< 0 >( reloc_data[ i ] ) ) = allocated + std::get< 1 >( reloc_data[ i ] );
+    for ( size_t i = 0; i < reloc_off.size( ); i++ )
+        *reinterpret_cast< size_t * >( allocated + reloc_off[ i ] ) = allocated + reloc_rva[ i ];
 
     spdlog::info( "Fixing imports..." );
 

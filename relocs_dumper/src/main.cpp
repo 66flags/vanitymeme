@@ -1,29 +1,4 @@
-#include "includes.hpp"
-
-byte *load_file_to_memory( const char *file_path, size_t &file_size )
-{
-    byte * out;
-    std::fstream file( file_path, std::ios::binary | std::ios::in );
-
-    if ( file.fail( ) ) {
-        spdlog::error( "failed to open dump" );
-        return 0;
-    }
-
-    file.seekg( 0, std::ios::end );
-    size_t size = file.tellg( );
-
-    file.seekg( 0, std::ios::beg );
-
-    out = ( byte * ) malloc( size );
-    file.read( ( char * ) out, size );
-
-    file.close( );
-
-    file_size = size;
-
-    return out;
-}
+#include "util.hpp"
 
 int main( int argc, char *argv[] )
 {
@@ -33,20 +8,30 @@ int main( int argc, char *argv[] )
     const char *dump_path2 = argv[ 3 ];
     const char *dump_base2 = argv[ 4 ];
 
-    std::fstream out_file{ };
 
     if ( !dump_path1 || !dump_base1 || !dump_path2 || !dump_base2 ) {
         spdlog::error( "usage: relocs_dumper <dump_path1> <dump_base1> <dump_path2> <dump_base2>" );
         return 0;
     }
 
-    size_t dump1_size{ };
-    size_t dump2_size{ };
-    auto dump1 = load_file_to_memory( dump_path1, dump1_size );
-    auto dump2 = load_file_to_memory( dump_path2, dump2_size );
+    // out data
+    std::vector< reloc_data_t > reloc_data{ };
+    std::stringstream out_str{ };
+    std::fstream out_file{ };
 
-    if ( !dump1 || !dump2 )
+    auto dump1 = dump_t( dump_path1, dump_base1 );
+    auto dump2 = dump_t( dump_path2, dump_base2 );
+
+    if ( !dump1.data || !dump2.data )
         return 0;
+
+    if ( dump1.size != dump2.size ) {
+        spdlog::error( "files are not the same size" );
+        return 0;
+    }
+
+    // reserve data for comparison so we don't do extra allocations
+    reloc_data.reserve( dump1.size );
 
     out_file.open( "relocs.hpp", std::ios::out | std::ios::trunc );
 
@@ -55,65 +40,59 @@ int main( int argc, char *argv[] )
         return 0;
     }
 
-    if ( dump1_size != dump2_size ) {
-        spdlog::error( "files are not the same size" );
-        return 0;
-    }
-
-    std::vector< std::tuple< size_t, size_t > > reloc_data;
-    std::stringstream out_str;
-
-    size_t dump1_base{ };
-    size_t dump2_base{ };
-
-    std::stringstream base1( dump_base1 ), base2( dump_base2 );
-    base1 >> std::hex >> dump1_base;
-    base2 >> std::hex >> dump2_base;
-
-    reloc_data.reserve( dump1_size );
-
     spdlog::info( "finding relocs..." );
-
-    auto is_inside_module = [ & ]( size_t addr, size_t base ) -> bool {
-        return addr >= base && addr <= base + dump1_size;
-    };
 
     // iterate thru bytes
     size_t curr_offset{ };
-    size_t end{ dump1_size - sizeof( size_t ) };
-    while ( curr_offset < end ) {// skip the first byte, we literally don't care about it
-        // out data
-        size_t dump1_val = *reinterpret_cast< size_t * >( dump1 + curr_offset );
-        size_t dump2_val = *reinterpret_cast< size_t * >( dump2 + curr_offset );
-        size_t dump1_rva = dump1_val - dump1_base;
-        size_t dump2_rva = dump2_val - dump2_base;
+    size_t end{ dump1.size - sizeof( size_t ) };
+    while ( curr_offset < end ) {
+        auto reloc1 = reloc_data_t( dump1, curr_offset );
+        auto reloc2 = reloc_data_t( dump2, curr_offset );
 
-        if ( !is_inside_module( dump1_val, dump1_base ) || dump1_val == dump2_val || !is_inside_module( dump2_val, dump2_base ) || dump1_rva != dump2_rva ) {
-            // skip this byte
+        bool is_hard_address = reloc1.value == reloc2.value;// hardcoded address, always the same
+        bool is_relative_call = reloc1.rva != reloc2.rva;   // this is a relative call, don't relocate
+
+        // data outside of range
+        if ( !utils::is_inside_module( reloc1.value, dump1 ) || !utils::is_inside_module( reloc2.value, dump2 ) ) {
+            curr_offset++;
+            continue;
+        }
+
+        if ( is_hard_address || is_relative_call ) {
             curr_offset++;
             continue;
         }
 
         // push reloc data
-        reloc_data.push_back( std::make_tuple( curr_offset, dump1_rva ) );
+        reloc_data.push_back( { curr_offset, reloc1.rva } );
 
-        // skip current rva
+        // skip current reloc
         curr_offset += sizeof( size_t );
     }
 
-    // setup format
+    // setup format for offsets list
     out_str << "#ifndef LDR_RELOCATIONS_HPP\n"
             << "#define LDR_RELOCATIONS_HPP\n"
             << "\n"
-            << "std::vector< std::tuple< size_t, size_t > > reloc_data = {";
+            << "std::array< size_t, 0x" << std::hex << std::uppercase << reloc_data.size( ) << " > reloc_off = {";
 
-    // add relocs from list
+    // offsets list
     for ( size_t i = 0; i < reloc_data.size( ); i++ ) {
         bool is_end = i == reloc_data.size( ) - 1;
-        size_t reloc_offset = std::get< 0 >( reloc_data[ i ] );
-        size_t reloc_rva = std::get< 1 >( reloc_data[ i ] );
 
-        out_str << " { 0x" << std::hex << std::uppercase << reloc_offset << ", 0x" << reloc_rva << " }" << ( is_end ? " " : "," );
+        out_str << " 0x" << reloc_data[ i ].value << ( is_end ? " " : "," );
+    }
+
+    // setup format for rva list
+    out_str << "};\n"
+            << "\n"
+            << "std::array< size_t, 0x" << reloc_data.size( ) << " > reloc_rva = {";
+
+    // rva list
+    for ( size_t i = 0; i < reloc_data.size( ); i++ ) {
+        bool is_end = i == reloc_data.size( ) - 1;
+
+        out_str << " 0x" << reloc_data[ i ].rva << ( is_end ? " " : "," );
     }
 
     // end format
@@ -121,11 +100,9 @@ int main( int argc, char *argv[] )
             << "\n"
             << "#endif // LDR_RELOCATIONS_HPP";
 
-    out_file << out_str.str( ); // write to file
+    out_file << out_str.str( );// write to file
 
     out_file.close( );
-    free( dump1 );
-    free( dump2 );
 
     spdlog::info( "done, found {} relocs", reloc_data.size( ) );
 
