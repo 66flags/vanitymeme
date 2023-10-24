@@ -1,2 +1,2 @@
 # vanitymeme
-fixing the config system one step at a time. (s/o patoke) fuck dalkr
+crack loader for vanitycheats, made public because cs2 is out.
